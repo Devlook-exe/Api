@@ -1,62 +1,52 @@
-from fastapi import FastAPI
-import requests
-import os
-import logging
+from flask import Flask, request, jsonify
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
-app = FastAPI()
+app = Flask(__name__)
 
-# Configuração de log para console (Render mostra isso no painel)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("asaas-api")
+# Coloque aqui o ID da sua planilha
+SPREADSHEET_ID = '1KEX0jFv2t8x7dSpbItVvCg_f3Xru_wHP-RjKH8dPdM4'
 
-# URL da API sandbox do Asaas
-BASE_URL = "https://api-sandbox.asaas.com/v3"
-ASAAS_API_KEY = os.getenv("ASAAS_API_KEY")  # Lembre de configurar essa var no Render
+# Nome da aba onde vai inserir os dados
+SHEET_NAME = 'Extrato'
 
-HEADERS = {
-    "accept": "application/json",
-    "access_token": ASAAS_API_KEY
-}
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+SERVICE_ACCOUNT_FILE = 'service-account.json'
 
-# Parâmetros fixos (sem 'type')
-FIXED_PARAMS = {
-    "startDate": "2025-06-01",
-    "finishDate": "2025-08-12",
-    "order": "desc"
-}
+credentials = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 
-def fetch_paginated(endpoint: str, params: dict):
-    data_all = []
-    offset = 0
+service = build('sheets', 'v4', credentials=credentials)
+sheet = service.spreadsheets()
 
-    while True:
-        paginated_params = params.copy()
-        paginated_params.update({"limit": 100, "offset": offset})
+@app.route('/extrato', methods=['POST'])
+def extrato():
+    data = request.get_json()
 
-        resp = requests.get(f"{BASE_URL}{endpoint}", headers=HEADERS, params=paginated_params)
+    if not isinstance(data, list) or len(data) == 0:
+        return jsonify({"error": "JSON deve ser uma lista de objetos com dados"}), 400
 
-        if resp.status_code != 200:
-            logger.error(f"Erro Asaas ({resp.status_code}): {resp.text}")
-            return {"error": f"Erro {resp.status_code}", "detalhes": resp.text}
+    headers = list(data[0].keys())
+    values = [headers] + [[item.get(key, "") for key in headers] for item in data]
 
-        json_resp = resp.json()
+    range_ = f'{SHEET_NAME}!A1'
 
-        # Loga o JSON retornado em cada página
-        logger.info(f"Resposta Asaas (offset={offset}): {json_resp}")
+    body = {'values': values}
 
-        data_all.extend(json_resp.get("data", []))
+    result = sheet.values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=range_,
+        valueInputOption='RAW',
+        body=body
+    ).execute()
 
-        if not json_resp.get("hasMore"):
-            break
+    return jsonify({
+        "updatedRange": result.get('updatedRange'),
+        "updatedRows": result.get('updatedRows'),
+        "updatedColumns": result.get('updatedColumns'),
+        "updatedCells": result.get('updatedCells')
+    })
 
-        offset += 100
+if __name__ == '__main__':
+    app.run(debug=True)
 
-    return data_all
-
-@app.get("/extrato")
-def get_extrato():
-    return fetch_paginated("/financialTransactions", FIXED_PARAMS)
-
-@app.get("/")
-def home():
-    return {"status": "API do Asaas rodando no Render com parâmetros fixos (sem type)"}
