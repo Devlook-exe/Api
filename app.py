@@ -20,7 +20,7 @@ HEADERS = {
 
 # Parâmetros fixos
 FIXED_PARAMS = {
-    "startDate": "2025-08-01",
+    "startDate": "2025-06-01",
     "finishDate": "2025-08-12",
     "order": "desc"
 }
