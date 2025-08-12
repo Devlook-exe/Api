@@ -1,42 +1,70 @@
-from flask import Flask, request, jsonify
+from fastapi import FastAPI
+import requests
 import os
+import logging
 
-app = Flask(__name__)
+app = FastAPI()
 
-def financial_transactions_to_sheet_array(json_data):
-    header = [
-        "id", "value", "balance", "type", "date",
-        "description", "paymentId", "splitId"
-    ]
-    result = [header]
-    for item in json_data:
-        row = [
-            item.get("id", ""),
-            item.get("value", ""),
-            item.get("balance", ""),
-            item.get("type", ""),
-            item.get("date", ""),
-            item.get("description", ""),
-            item.get("paymentId", ""),
-            item.get("splitId", "")
-        ]
-        result.append(row)
-    return result
+# Configuração de log
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("asaas-api")
 
-@app.route('/extrato', methods=['POST'])
-def extrato():
-    json_data = request.json
-    if not json_data:
-        return jsonify({"error": "Nenhum JSON enviado"}), 400
+# URL da API sandbox do Asaas
+BASE_URL = "https://api-sandbox.asaas.com/v3"
+ASAAS_API_KEY = os.getenv("ASAAS_API_KEY")  # Configure essa var no ambiente (ex: Render)
 
-    sheet_data = financial_transactions_to_sheet_array(json_data)
-    print(sheet_data)  # Pra debug no logs do Render
+HEADERS = {
+    "accept": "application/json",
+    "access_token": ASAAS_API_KEY
+}
 
-    return jsonify({
-        "status": "sucesso",
-        "linhas": len(sheet_data) - 1
-    })
+# Parâmetros fixos
+FIXED_PARAMS = {
+    "startDate": "2025-08-01",
+    "finishDate": "2025-08-12",
+    "order": "desc"
+}
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+def fetch_paginated(endpoint: str, params: dict):
+    data_all = []
+    offset = 0
+
+    while True:
+        paginated_params = params.copy()
+        paginated_params.update({"limit": 100, "offset": offset})
+
+        resp = requests.get(f"{BASE_URL}{endpoint}", headers=HEADERS, params=paginated_params)
+
+        if resp.status_code != 200:
+            logger.error(f"Erro Asaas ({resp.status_code}): {resp.text}")
+            return {"error": f"Erro {resp.status_code}", "detalhes": resp.text}
+
+        json_resp = resp.json()
+
+        logger.info(f"Resposta Asaas (offset={offset}): {json_resp}")
+
+        data_all.extend(json_resp.get("data", []))
+
+        if not json_resp.get("hasMore"):
+            break
+
+        offset += 100
+
+    # Transforma lista de dicionários em array de arrays
+    if data_all:
+        keys = list(data_all[0].keys())
+        array_de_arrays = [keys]
+        for item in data_all:
+            array_de_arrays.append([item.get(k) for k in keys])
+        return array_de_arrays
+    else:
+        return []
+
+@app.get("/extrato")
+def get_extrato():
+    return fetch_paginated("/financialTransactions", FIXED_PARAMS)
+
+@app.get("/")
+def home():
+    return {"status": "API do Asaas rodando no Render com parâmetros fixos (sem type)"}
+
