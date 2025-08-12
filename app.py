@@ -26,7 +26,7 @@ FIXED_PARAMS = {
 }
 
 # Variáveis para Google Sheets
-SERVICE_ACCOUNT_FILE = "path/to/your/service-account.json"  # Substitua pelo caminho real
+SERVICE_ACCOUNT_FILE = "service-account.json"  # Substitua pelo caminho real
 SPREADSHEET_ID = "1KEX0jFv2t8x7dSpbItVvCg_f3Xru_wHP-RjKH8dPdM4"  # Coloque o ID da sua planilha
 RANGE_NAME = "Extrato!A1"  # Intervalo para começar a inserir dados
 
