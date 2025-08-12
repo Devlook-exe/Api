@@ -3,27 +3,32 @@ import requests
 import os
 import logging
 
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+
 app = FastAPI()
 
-# Configuração de log
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("asaas-api")
 
-# URL da API sandbox do Asaas
 BASE_URL = "https://api-sandbox.asaas.com/v3"
-ASAAS_API_KEY = os.getenv("ASAAS_API_KEY")  # Configure essa var no ambiente (ex: Render)
+ASAAS_API_KEY = os.getenv("ASAAS_API_KEY")
 
 HEADERS = {
     "accept": "application/json",
     "access_token": ASAAS_API_KEY
 }
 
-# Parâmetros fixos
 FIXED_PARAMS = {
     "startDate": "2025-06-01",
     "finishDate": "2025-08-12",
     "order": "desc"
 }
+
+# Variáveis para Google Sheets
+SERVICE_ACCOUNT_FILE = "path/to/your/service-account.json"  # Substitua pelo caminho real
+SPREADSHEET_ID = "sua_planilha_id_aqui"  # Coloque o ID da sua planilha
+RANGE_NAME = "Sheet1!A1"  # Intervalo para começar a inserir dados
 
 def fetch_paginated(endpoint: str, params: dict):
     data_all = []
@@ -50,7 +55,6 @@ def fetch_paginated(endpoint: str, params: dict):
 
         offset += 100
 
-    # Transforma lista de dicionários em array de arrays
     if data_all:
         keys = list(data_all[0].keys())
         array_de_arrays = [keys]
@@ -60,9 +64,40 @@ def fetch_paginated(endpoint: str, params: dict):
     else:
         return []
 
+def write_to_sheets(values):
+    credentials = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE,
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+
+    service = build('sheets', 'v4', credentials=credentials)
+    sheet = service.spreadsheets()
+
+    body = {
+        "values": values
+    }
+
+    result = sheet.values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=RANGE_NAME,
+        valueInputOption="RAW",
+        body=body
+    ).execute()
+
+    logger.info(f"{result.get('updatedCells')} células atualizadas no Google Sheets.")
+    return result
+
 @app.get("/extrato")
 def get_extrato():
-    return fetch_paginated("/financialTransactions", FIXED_PARAMS)
+    data = fetch_paginated("/financialTransactions", FIXED_PARAMS)
+    if isinstance(data, dict) and data.get("error"):
+        return data  # Retorna erro da API Asaas
+
+    write_result = write_to_sheets(data)
+    return {
+        "message": "Dados inseridos no Google Sheets com sucesso",
+        "updatedCells": write_result.get('updatedCells')
+    }
 
 @app.get("/")
 def home():
