@@ -78,8 +78,8 @@ def write_to_sheets(values):
     }
 
     result = sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=RANGE_NAME,
+        spreadsheetId=1KEX0jFv2t8x7dSpbItVvCg_f3Xru_wHP-RjKH8dPdM4,
+        range=Extrato!A1,
         valueInputOption="RAW",
         body=body
     ).execute()
